@@ -1,0 +1,575 @@
+<title>Dirhaven</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+  /* One deliberate visual world: a night-time survey map. Single theme by design. */
+  :root {
+    color-scheme: dark;
+    --ink: #0f1118;
+    --panel: #181b27;
+    --panel-2: #212536;
+    --line: #353b52;
+    --text: #ece6d6;
+    --muted: #9aa0b8;
+    --brass: #d9a441;
+    --brass-deep: #8a6420;
+    --danger: #e0533d;
+    --good: #6fcf8a;
+    --display: "Pixelify Sans", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --book: "Crimson Pro", Georgia, "Times New Roman", serif;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--ink); color: var(--text); font: 15px/1.5 var(--body); overflow: hidden; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+  #stage { position: fixed; inset: 0; }
+  #game { width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; cursor: crosshair; }
+
+  /* ── HUD ── */
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  /* Everything interactive inside the HUD has to opt back in. */
+  #pad, .dpad, .ab, .dpad button, .ab button, #area-card, #carry { pointer-events: auto; }
+  .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 10px; align-items: flex-start; justify-content: space-between;
+         padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 0; }
+  .bar > * { pointer-events: auto; }
+  #crumbs { display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; max-width: min(70vw, 900px);
+            background: rgba(15,17,24,.86); border: 1px solid var(--line); padding: 4px; }
+  #crumbs::-webkit-scrollbar { display: none; }
+  .crumb { display: flex; flex-direction: column; align-items: flex-start; background: transparent; border: 0; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+  .crumb:hover:not(:disabled) { background: var(--panel-2); }
+  .crumb .lvl { font: 600 9px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .crumb .nm { font: 500 14px/1.3 var(--display); }
+  .crumb.here .nm { color: var(--brass); }
+  .crumb:disabled { cursor: default; }
+  .sep { color: var(--line); font-family: var(--display); }
+  .tools { display: flex; gap: 6px; align-items: stretch; }
+  .stat { background: rgba(15,17,24,.86); border: 1px solid var(--line); padding: 4px 10px; display: flex; flex-direction: column; justify-content: center; }
+  .stat b { font: 600 15px/1.1 var(--display); color: var(--text); font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .iconbtn { background: rgba(15,17,24,.86); border: 1px solid var(--line); min-width: 40px; padding: 0 10px; font: 600 14px var(--display); cursor: pointer; }
+  .iconbtn:hover { border-color: var(--brass); color: var(--brass); }
+
+  #area-card { position: absolute; left: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); width: 230px; pointer-events: auto;
+               background: rgba(15,17,24,.88); border: 1px solid var(--line); padding: 10px 12px 12px; }
+  #area-card .k { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  #area-name { font: 600 16px/1.2 var(--display); margin: 2px 0 8px; overflow-wrap: anywhere; }
+  #source-name { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  #area-raw { font: 11px/1.3 var(--mono); color: var(--muted); margin: -6px 0 8px; overflow-wrap: anywhere; }
+  .ach-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+  .ach-list li { color: var(--muted); opacity: .6; }
+  .ach-list li b { color: var(--text); font-weight: 700; display: block; font-size: 12px; }
+  .ach-list li.got { opacity: 1; color: #cfc9bb; }
+  .ach-list li.got b { color: var(--brass); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { font: 700 10px/1 var(--body); letter-spacing: .08em; text-transform: uppercase; padding: 4px 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); }
+  .meter { --pos: 50%; position: relative; height: 8px; margin: 10px 0 4px; background: linear-gradient(90deg, #4a6fa8, #6b7090 45%, #8a8a78 55%, #e0a33f); }
+  .meter::after { content: ""; position: absolute; top: -3px; left: calc(var(--pos) - 2px); width: 4px; height: 14px; background: var(--text); box-shadow: 0 0 0 1px var(--ink); }
+  .meter-cap { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+  .meter-cap b { color: var(--text); font-weight: 700; }
+
+  #prompt { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); pointer-events: none;
+            background: rgba(15,17,24,.92); border: 1px solid var(--brass-deep); padding: 6px 12px; display: flex; gap: 8px; align-items: center; max-width: min(80vw, 420px); }
+  #prompt kbd { font: 600 11px/1 var(--display); background: var(--brass); color: var(--ink); padding: 3px 6px; }
+  #prompt-verb { color: var(--muted); font-size: 13px; }
+  #prompt-obj { font: 500 14px var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  #banner { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); text-align: center; pointer-events: none; transition: opacity .4s, transform .4s; width: min(90vw, 640px); }
+  #banner.out { opacity: 0; transform: translate(-50%, -8px); }
+  #banner-kicker { font: 700 11px var(--body); letter-spacing: .3em; text-transform: uppercase; color: var(--accent-area, var(--brass)); text-shadow: 0 1px 0 #000; }
+  #banner-title { font: 700 clamp(30px, 6vw, 56px)/1.05 var(--display); text-shadow: 0 3px 0 #000, 0 0 24px rgba(0,0,0,.6); overflow-wrap: anywhere; text-wrap: balance; }
+  #banner-sub { font-size: 14px; color: var(--text); text-shadow: 0 1px 2px #000; margin-top: 6px; }
+  #banner.small #banner-title { font-size: clamp(22px, 4vw, 34px); }
+  #banner.small { top: 16%; }
+
+  /* ── dialog ── */
+  #dlg { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); width: min(calc(100vw - 32px), 620px);
+         background: var(--panel); border: 2px solid var(--text); box-shadow: 0 0 0 4px var(--ink), 0 12px 30px rgba(0,0,0,.5); padding: 12px 16px 14px; cursor: pointer; z-index: 5; }
+  #dlg[data-kind="guard"] { border-color: var(--danger); }
+  #dlg-who { font: 600 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--brass); }
+  #dlg[data-kind="guard"] #dlg-who { color: var(--danger); }
+  #dlg-text { font: 400 19px/1.35 var(--display); min-height: 2.7em; margin-top: 4px; }
+  #dlg .hint { position: absolute; right: 12px; bottom: 6px; font: 600 11px var(--display); color: var(--muted); }
+
+  /* ── inspect panel ── */
+  #panel { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 70px); right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); width: min(380px, calc(100vw - 32px));
+           background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; z-index: 6; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+  .p-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); position: relative; }
+  #p-kind { font: 700 10px var(--body); letter-spacing: .16em; text-transform: uppercase; color: var(--brass); }
+  #p-name { font: 600 22px/1.15 var(--display); margin: 4px 36px 4px 0; overflow-wrap: anywhere; }
+  #p-path { font: 12px/1.4 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+  #p-close { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; font: 600 16px var(--display); }
+  #p-close:hover { border-color: var(--brass); }
+  .p-body { padding: 12px 16px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 13px; }
+  .facts dt { color: var(--muted); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; padding-top: 3px; }
+  .facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .sec-k { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  #p-words { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  #p-preview { background: #0b0c11; border: 1px solid var(--line); min-height: 60px; }
+  #p-preview img { display: block; width: 100%; max-height: 280px; object-fit: contain; image-rendering: auto; }
+  #p-preview pre { margin: 0; padding: 10px 12px; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: #d8d2c2; max-height: 320px; overflow: auto; }
+  .muted { color: var(--muted); padding: 10px 12px; margin: 0; font-size: 13px; }
+
+  .p-foot { border-top: 1px solid var(--line); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+  #p-quest { margin: 0; font-size: 12px; color: var(--brass); }
+  .btn-take { padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; font: 600 14px var(--display); }
+  .btn-take.primary { background: var(--brass); color: var(--ink); border-color: var(--brass); box-shadow: 3px 3px 0 var(--brass-deep); }
+  .btn-take:hover { border-color: var(--brass); }
+
+  /* ── errand log ── */
+  #quests { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 70px); left: 16px; width: min(360px, calc(100vw - 32px));
+            max-height: min(70vh, 620px); background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; z-index: 6; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+  #q-kicker { font: 700 10px var(--body); letter-spacing: .16em; text-transform: uppercase; color: var(--brass); }
+  #q-title { font: 600 19px/1.15 var(--display); margin: 4px 36px 0 0; }
+  #q-close { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; font: 600 16px var(--display); }
+  #q-list { display: flex; flex-direction: column; gap: 10px; }
+  .quest { border: 1px solid var(--line); border-left: 3px solid var(--brass); padding: 10px 12px; background: var(--panel-2); }
+  .quest h3 { font: 600 15px/1.25 var(--display); margin: 0 0 2px; }
+  .quest .who { margin: 0 0 6px; font-size: 11px; color: var(--muted); }
+  .quest .hints { margin: 0; padding-left: 16px; font-size: 13px; color: #cfc9bb; display: flex; flex-direction: column; gap: 3px; }
+  .quest .ready { margin: 8px 0 0; font-size: 13px; color: var(--good); }
+  .qrow { display: flex; gap: 6px; margin-top: 10px; }
+  .minibtn { background: var(--panel); border: 1px solid var(--brass-deep); color: var(--brass); padding: 5px 10px; font: 600 12px var(--display); cursor: pointer; }
+  .minibtn.ghost { border-color: var(--line); color: var(--muted); }
+  .minibtn:hover { border-color: var(--brass); }
+  .done-list { margin: 0; padding-left: 16px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+
+  #carry { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 62px);
+           background: rgba(15,17,24,.92); border: 1px solid var(--line); border-left: 3px solid var(--brass); padding: 5px 6px 5px 10px; display: flex; gap: 8px; align-items: center; max-width: min(80vw, 380px); }
+  #carry .k { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  #carry-name { font: 500 13px var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #carry-drop { background: var(--panel-2); border: 1px solid var(--line); width: 22px; height: 22px; cursor: pointer; font: 600 12px var(--display); }
+  #dlg[data-kind="quest"] { border-color: var(--brass); }
+  #dlg[data-kind="quest"] #dlg-who { color: var(--brass); }
+  body.touch #carry { bottom: calc(env(safe-area-inset-bottom, 0px) + 198px); }
+
+  .asktip { font-size: 11px; color: var(--muted); align-self: center; }
+  .cards li { color: var(--brass); }
+  .pdfpage { display: block; width: 100%; height: auto; background: #fff; }
+  #nowplaying { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 100px); pointer-events: auto;
+                background: rgba(15,17,24,.92); border: 1px solid var(--line); border-left: 3px solid var(--good); padding: 5px 6px 5px 10px; display: flex; gap: 8px; align-items: center; max-width: min(80vw, 380px); }
+  #nowplaying .k { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  #np-name { font: 500 13px var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #np-stop { background: var(--panel-2); border: 1px solid var(--line); width: 22px; height: 22px; cursor: pointer; font: 600 11px var(--display); }
+  body.touch #nowplaying { bottom: calc(env(safe-area-inset-bottom, 0px) + 236px); }
+  .iconbtn.off { color: var(--muted); }
+
+  /* ── file panel ── */
+  #p-desc { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text); }
+  .p-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .act-btn { background: var(--panel-2); border: 1px solid var(--line); padding: 8px 12px; font: 600 13px var(--display); cursor: pointer; display: flex; gap: 6px; align-items: center; }
+  .act-btn:hover { border-color: var(--brass); color: var(--brass); }
+  .act-btn.on { background: var(--brass); color: var(--ink); border-color: var(--brass); }
+  #p-analysis { border: 1px solid var(--line); background: var(--panel-2); }
+  #p-analysis > summary { cursor: pointer; padding: 8px 10px; font: 700 10px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  #p-analysis[open] > summary { color: var(--brass); border-bottom: 1px solid var(--line); }
+  .p-an-in { padding: 10px; display: flex; flex-direction: column; gap: 12px; }
+
+  /* ── book reader ── */
+  #reader { position: fixed; inset: 0; background: rgba(8,9,13,.86); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 8; }
+  .book { width: min(920px, 100%); height: min(720px, 94vh); background: #e8e0cd; border: 1px solid #b6a988; box-shadow: 0 24px 60px rgba(0,0,0,.6); display: flex; flex-direction: column; color: #24201a; }
+  .book-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 18px 10px; border-bottom: 1px solid #cdbfa0; }
+  .book-kicker { font: 700 10px var(--body); letter-spacing: .16em; text-transform: uppercase; color: #8a7a58; }
+  .book-title { font: 600 20px/1.2 var(--book); overflow-wrap: anywhere; }
+  #reader-close { background: #ded4bd; border: 1px solid #b6a988; width: 32px; height: 32px; cursor: pointer; font: 600 16px var(--display); color: #24201a; }
+  .pages { position: relative; flex: 1; min-height: 0; overflow: hidden; padding: 18px 26px; }
+  .pages .spine { position: absolute; left: 50%; top: 10px; bottom: 10px; width: 2px; background: linear-gradient(180deg, transparent, rgba(80,64,40,.28), transparent); }
+  @media (max-width: 720px) { .pages .spine { display: none; } }
+  .paper { font: 400 17px/1.62 var(--book); height: 100%; column-gap: 48px; text-align: justify; hyphens: auto; transition: transform .25s ease; }
+  .paper pre { font: inherit; white-space: pre-wrap; margin: 0; }
+  .paper canvas, .paper img { display: block; max-width: 100%; height: auto; margin: 0 auto; background: #fff; }
+  .book-foot { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 10px; border-top: 1px solid #cdbfa0; font: 600 12px var(--display); color: #6b5c3e; }
+  .book-foot .minibtn { background: #ded4bd; border-color: #b6a988; color: #24201a; }
+  .book-foot .minibtn:disabled { opacity: .45; cursor: default; }
+
+  /* ── picture viewer ── */
+  #viewer { position: fixed; inset: 0; background: rgba(8,9,13,.9); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 8; }
+  #viewer .frame { background: #1a1c24; border: 10px solid #c8962e; box-shadow: 0 0 0 3px #6b4a2e, 0 24px 60px rgba(0,0,0,.6); max-width: min(900px, 100%); max-height: 90vh; display: flex; flex-direction: column; }
+  #viewer img { max-width: 100%; max-height: calc(90vh - 52px); object-fit: contain; display: block; }
+  #viewer .cap { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; background: #12141c; font: 500 13px var(--display); }
+  #viewer-close { background: var(--panel-2); border: 1px solid var(--line); width: 28px; height: 28px; cursor: pointer; }
+
+  /* ── bookcase ── */
+  #shelf { position: fixed; inset: 0; background: rgba(8,9,13,.84); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 8; }
+  .case { width: min(760px, 100%); max-height: 90vh; background: #3a2718; border: 6px solid #6b4a2e; display: flex; flex-direction: column; overflow: hidden; }
+  .case .p-head { background: #2a1d12; border-bottom: 4px solid #6b4a2e; }
+  #shelf-close { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; background: #6b4a2e; border: 1px solid #8a5f3a; cursor: pointer; font: 600 16px var(--display); color: #f4f1ea; }
+  .shelf-rows { padding: 14px; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; background: repeating-linear-gradient(180deg, #3a2718 0 92px, #6b4a2e 92px 100px); }
+  .spine-btn { width: 44px; height: 150px; border: 1px solid rgba(0,0,0,.45); cursor: pointer; display: flex; align-items: flex-end; justify-content: center; padding: 8px 4px; color: #1a1c24; }
+  .spine-btn span { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 12px var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 128px; }
+  .spine-btn:hover { transform: translateY(-6px); }
+  .spine-btn:focus-visible { outline: 2px solid var(--brass); }
+
+  /* ── backpack & phonebook ── */
+  #pack { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 70px); right: 16px; width: min(340px, calc(100vw - 32px)); max-height: 60vh; background: var(--panel); border: 1px solid var(--line); z-index: 6; display: flex; flex-direction: column; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+  #pack-close { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; font: 600 16px var(--display); }
+  .pack-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .pack-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; border: 1px solid var(--line); background: var(--panel-2); padding: 7px 8px; }
+  .pack-list .nm { font: 500 13px var(--display); overflow-wrap: anywhere; }
+  .pack-list .sub { font-size: 11px; color: var(--muted); }
+  .pack-list button { background: var(--panel); border: 1px solid var(--line); color: var(--muted); cursor: pointer; padding: 4px 7px; font: 600 11px var(--display); }
+  .pack-list button:hover { border-color: var(--brass); color: var(--brass); }
+  .people-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .people-list li { border: 1px solid var(--line); border-left: 3px solid var(--brass-deep); background: var(--panel-2); padding: 7px 9px; }
+  .people-list .nm { font: 600 14px var(--display); }
+  .people-list .sub { font-size: 11px; color: var(--muted); }
+  .people-list .st { font-size: 12px; color: #cfc9bb; margin-top: 2px; }
+  .people-list li.open { border-left-color: var(--brass); }
+  .tabs { display: flex; gap: 4px; padding: 8px 10px 0; border-bottom: 1px solid var(--line); }
+  .tab { background: none; border: 1px solid transparent; border-bottom: 0; padding: 6px 10px; font: 600 12px var(--display); color: var(--muted); cursor: pointer; }
+  .tab.on { background: var(--panel-2); border-color: var(--line); color: var(--brass); }
+
+  /* ── atlas ── */
+  #atlas { position: fixed; inset: 0; background: rgba(11,12,17,.82); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 7; }
+  .atlas-box { background: var(--panel); border: 1px solid var(--line); width: min(980px, 100%); height: min(660px, 92vh); display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,.5); }
+  .atlas-body { display: grid; grid-template-columns: 260px 1fr; flex: 1; min-height: 0; }
+  .atlas-body > * { min-height: 0; min-width: 0; }
+  #atlas-tree { border-right: 1px solid var(--line); overflow-y: auto; padding: 8px 0; display: flex; flex-direction: column; }
+  .atlas-row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; background: none; border: 0; border-left: 3px solid transparent; padding: 6px 10px; cursor: pointer; text-align: left; }
+  .atlas-row:hover { background: var(--panel-2); }
+  .atlas-row.sel { background: var(--panel-2); border-left-color: var(--brass); }
+  .atlas-row .nm { font: 500 13px var(--display); }
+  .atlas-row .lv { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .atlas-row.unseen .nm { color: var(--muted); }
+  #atlas-view { display: flex; flex-direction: column; min-width: 0; padding: 10px 12px 12px; }
+  #atlas-canvas { flex: 1; min-height: 0; image-rendering: pixelated; cursor: pointer; background: #0b0c11; border: 1px solid var(--line); }
+  .atlas-foot { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding-top: 10px; }
+  #atlas-name { font: 600 16px var(--display); }
+  #atlas-sub { font-size: 11px; color: var(--muted); }
+  #atlas-travel:disabled { opacity: .5; cursor: default; box-shadow: none; }
+  #atlas-close { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; font: 600 16px var(--display); }
+  #atlas-close:hover { border-color: var(--brass); }
+  .atlas-box .p-head { flex: 0 0 auto; }
+  @media (max-width: 760px) {
+    #atlas { padding: 10px; align-items: stretch; }
+    .atlas-box { height: min(660px, 100%); }
+    .atlas-box .p-head { padding: 10px 12px 8px; }
+    .atlas-box #q-title { font-size: 15px; margin-right: 44px; }
+    .atlas-body { grid-template-columns: 1fr; grid-template-rows: 36% 1fr; }
+    #atlas-tree { border-right: 0; border-bottom: 1px solid var(--line); }
+    #atlas-view { padding: 8px 10px 10px; }
+    .atlas-foot { gap: 8px; }
+    #atlas-name { font-size: 14px; }
+    #atlas-sub { font-size: 10px; }
+    #atlas-travel { font-size: 12px; padding: 8px 10px; }
+  }
+
+  /* ── title ── */
+  #title { position: fixed; inset: 0; display: flex; align-items: center; padding-inline: 16px; background: linear-gradient(90deg, rgba(11,12,17,.92) 0%, rgba(11,12,17,.72) 46%, rgba(11,12,17,.15) 100%); z-index: 8; overflow-y: auto; }
+  .title-card { max-width: 520px; min-width: 0; width: 100%; padding-block: 32px; margin-left: clamp(0px, 6vw, 80px); }
+  .title-card * { overflow-wrap: anywhere; }
+  .logo { font: 700 clamp(48px, 10vw, 88px)/0.9 var(--display); letter-spacing: -.01em; color: var(--text); text-shadow: 4px 4px 0 var(--brass-deep); }
+  .logo span { color: var(--brass); }
+  .tag { font: 500 clamp(18px, 3vw, 22px)/1.3 var(--display); color: var(--text); margin: 14px 0 10px; }
+  .lede { color: #cfc9bb; max-width: 58ch; margin: 0 0 20px; }
+  .actions { display: flex; flex-direction: column; gap: 8px; align-items: stretch; max-width: 380px; }
+  .btn { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
+  .btn:hover { border-color: var(--brass); }
+  .btn b { font: 600 16px var(--display); display: block; }
+  .btn small { color: var(--muted); font-size: 12px; display: block; }
+  .btn.primary { background: var(--brass); color: var(--ink); border-color: var(--brass); box-shadow: 4px 4px 0 var(--brass-deep); }
+  .btn.primary small { color: #3a2a0a; }
+  .btn .arrow { font: 600 18px var(--display); }
+  .legend { margin-top: 22px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 16px; font-size: 13px; color: #cfc9bb; max-width: 520px; }
+  .legend div::before { content: "▪ "; color: var(--brass); }
+  .fine { font-size: 12px; color: var(--muted); margin-top: 18px; max-width: 58ch; }
+  .fine code { font: 11px var(--mono); background: var(--panel-2); padding: 1px 4px; }
+
+  #loading { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; background: var(--panel); border: 1px solid var(--line); padding: 14px 18px; min-width: 240px; text-align: center; }
+  #loading .k { font: 600 14px var(--display); color: var(--brass); }
+  #loading-msg { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .dots::after { content: "…"; animation: dots 1s steps(4) infinite; display: inline-block; width: 1.2em; text-align: left; overflow: hidden; vertical-align: bottom; }
+  @keyframes dots { from { width: 0; } to { width: 1.2em; } }
+
+  #toast { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 80px); left: 50%; transform: translateX(-50%); background: var(--danger); color: #fff; padding: 8px 14px; font-weight: 700; z-index: 9; }
+  #toast.calm { background: var(--panel); color: var(--text); border: 1px solid var(--brass-deep); font-family: var(--display); font-weight: 500; }
+
+  #help { position: fixed; inset: 0; background: rgba(11,12,17,.75); display: flex; align-items: center; justify-content: center; padding-inline: 16px; z-index: 7; }
+  .help-card { background: var(--panel); border: 1px solid var(--line); max-width: 560px; width: 100%; max-height: 86vh; overflow-y: auto; padding: 18px 20px 20px; position: relative; }
+  .help-card h2 { font: 600 22px var(--display); margin: 0 0 12px; }
+  .help-card h3 { font: 700 10px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--brass); margin: 16px 0 6px; }
+  .help-card dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 14px; }
+  .help-card dt { font: 500 13px var(--display); color: var(--text); }
+  .help-card dd { margin: 0; color: #cfc9bb; }
+  .help-card p { margin: 0; font-size: 14px; color: #cfc9bb; }
+  #help-close { position: absolute; top: 12px; right: 12px; }
+
+  /* ── touch pad ── */
+  #pad { display: none; }
+  body.touch #pad { display: block; }
+  body.touch #area-card { display: none; }
+  .dpad { position: fixed; left: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); width: 132px; height: 132px; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 2px; z-index: 4; }
+  .dpad button, .ab button { background: rgba(24,27,39,.8); border: 1px solid var(--line); font: 600 16px var(--display); touch-action: none; user-select: none; -webkit-user-select: none; }
+  .dpad button.on { background: var(--brass); color: var(--ink); }
+  .ab { position: fixed; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); display: flex; gap: 12px; align-items: flex-end; z-index: 4; }
+  .ab button { width: 60px; height: 60px; border-radius: 50%; }
+  #btn-a { background: var(--brass); color: var(--ink); border-color: var(--brass); margin-bottom: 24px; }
+  body.touch #prompt { bottom: calc(env(safe-area-inset-bottom, 0px) + 160px); }
+  body.touch #dlg { bottom: calc(env(safe-area-inset-bottom, 0px) + 160px); }
+
+  @media (max-width: 760px) {
+    .stat { display: none; }
+    #crumbs { max-width: calc(100vw - 262px); }
+    .iconbtn { min-width: 36px; padding: 0 7px; }
+  }
+  @media (max-width: 640px) {
+    #title { background: rgba(11,12,17,.86); align-items: flex-start; }
+    .title-card { margin-left: 0; }
+    #area-card { display: none; }
+    .stat.opt { display: none; }
+    #panel { top: auto; height: 62vh; left: 16px; width: auto; }
+    #quests { top: calc(env(safe-area-inset-top, 0px) + 64px); right: 16px; width: auto; max-height: 56vh; }
+    #pack { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 200px); left: 16px; width: auto; max-height: 44vh; }
+    .spine-btn { width: 38px; height: 120px; }
+    .book { height: 92vh; }
+    .paper { font-size: 16px; }
+    #crumbs { max-width: calc(100vw - 258px); }
+  }
+  @media (prefers-reduced-motion: reduce) { #banner, .dots::after { transition: none; animation: none; } }
+</style>
+
+<div id="stage"><canvas id="game" tabindex="0" aria-label="Dirhaven game view"></canvas></div>
+
+<div id="hud" hidden>
+  <div class="bar">
+    <nav id="crumbs" aria-label="Where you are"></nav>
+    <div class="tools">
+      <div class="stat"><b id="stat-places">0</b><span>Places</span></div>
+      <div class="stat opt"><b id="stat-files">0</b><span>Inspected</span></div>
+      <div class="stat opt"><b id="stat-errands">0</b><span>Errands</span></div>
+      <div class="stat opt"><b id="stat-cards">0</b><span>Keycards</span></div>
+      <button class="iconbtn" id="btn-atlas" title="Atlas (M)" aria-label="Atlas">⬢</button>
+      <button class="iconbtn" id="btn-quests" title="Errand log (J)" aria-label="Errand log">★ <span id="q-count">0</span></button>
+      <button class="iconbtn" id="btn-pack" title="Backpack (B)" aria-label="Backpack">🎒 <span id="pack-count">0</span></button>
+      <button class="iconbtn" id="btn-sound" title="Sound" aria-label="Toggle sound">♪</button>
+      <button class="iconbtn" id="btn-up" title="Leave this place (Q)" aria-label="Leave this place">↑</button>
+      <button class="iconbtn" id="btn-help" title="Controls and legend (H)" aria-label="Help">?</button>
+      <button class="iconbtn" id="btn-title" title="Back to title" aria-label="Back to title">≡</button>
+    </div>
+  </div>
+  <aside id="area-card" aria-label="Survey of this place">
+    <div class="k">Survey · <span id="area-level"></span></div>
+    <div id="area-name"></div>
+    <div id="area-raw"></div>
+    <div class="chips" id="area-tags"></div>
+    <div class="meter" id="area-tone"></div>
+    <div class="meter-cap"><span>gloomy</span><b id="area-tone-label"></b><span>radiant</span></div>
+    <div id="source-name"></div>
+  </aside>
+  <div id="nowplaying" hidden><span class="k">Playing</span><span id="np-name"></span><button id="np-stop" aria-label="Stop the music">◼</button></div>
+  <div id="carry" hidden><span class="k">Carrying</span><span id="carry-name"></span><button id="carry-drop" aria-label="Open the backpack">▣</button></div>
+  <div id="prompt" hidden><kbd>E</kbd><span id="prompt-verb"></span><span id="prompt-obj"></span></div>
+  <div id="pad">
+    <div class="dpad">
+      <span></span><button data-key="ArrowUp" aria-label="Up">▲</button><span></span>
+      <button data-key="ArrowLeft" aria-label="Left">◀</button><span></span><button data-key="ArrowRight" aria-label="Right">▶</button>
+      <span></span><button data-key="ArrowDown" aria-label="Down">▼</button><span></span>
+    </div>
+    <div class="ab"><button id="btn-b" aria-label="Back">B</button><button id="btn-a" aria-label="Interact">A</button></div>
+  </div>
+</div>
+
+<div id="banner" hidden><div id="banner-kicker"></div><div id="banner-title"></div><div id="banner-sub"></div></div>
+
+<div id="dlg" hidden role="dialog" aria-live="polite"><div id="dlg-who"></div><div id="dlg-text"></div><span class="hint">▼</span></div>
+
+<section id="panel" hidden aria-label="File details">
+  <div class="p-head">
+    <div id="p-kind"></div>
+    <div id="p-name"></div>
+    <div id="p-path"></div>
+    <button id="p-close" aria-label="Close">×</button>
+  </div>
+  <div class="p-body">
+    <p id="p-desc"></p>
+    <div class="p-actions" id="p-actions"></div>
+    <dl class="facts"><dt>Size</dt><dd id="p-size"></dd><dt>Modified</dt><dd id="p-date"></dd></dl>
+    <details id="p-analysis">
+      <summary>How the town read it</summary>
+      <div class="p-an-in">
+        <div><div class="sec-k">Tags · from the word dictionary</div><div class="chips" id="p-tags"></div></div>
+        <div>
+          <div class="sec-k">Tone · from the sentiment lexicon</div>
+          <div class="meter" id="p-tone"></div>
+          <div class="meter-cap"><span>gloomy</span><b id="p-tone-label"></b><span>radiant</span></div>
+          <div id="p-words"></div>
+        </div>
+      </div>
+    </details>
+  </div>
+  <div class="p-foot">
+    <p id="p-quest" hidden></p>
+    <button id="p-take" class="btn-take primary" hidden>Pick it up</button>
+  </div>
+</section>
+
+<section id="reader" hidden aria-label="Reader">
+  <div class="book">
+    <header class="book-head">
+      <div><div class="book-kicker" id="reader-kicker"></div><div class="book-title" id="reader-title"></div></div>
+      <button id="reader-close" aria-label="Close the book">×</button>
+    </header>
+    <div class="pages" id="reader-pages"><div class="paper" id="reader-text"></div><div class="spine"></div></div>
+    <footer class="book-foot">
+      <button id="reader-prev" class="minibtn">‹ Back</button>
+      <span id="reader-page"></span>
+      <button id="reader-next" class="minibtn">Next ›</button>
+    </footer>
+  </div>
+</section>
+
+<section id="viewer" hidden aria-label="Picture">
+  <div class="frame"><img id="viewer-img" alt=""><div class="cap"><span id="viewer-cap"></span><button id="viewer-close" aria-label="Close">×</button></div></div>
+</section>
+
+<section id="shelf" hidden aria-label="Bookcase">
+  <div class="case">
+    <header class="p-head"><div id="q-kicker">Bookcase</div><div id="q-title"><span id="shelf-where"></span></div><button id="shelf-close" aria-label="Close">×</button></header>
+    <div class="shelf-rows" id="shelf-books"></div>
+  </div>
+</section>
+
+<section id="pack" hidden aria-label="Backpack">
+  <div class="p-head"><div id="q-kicker">Backpack</div><div id="q-title">What you're carrying</div><button id="pack-close" aria-label="Close">×</button></div>
+  <div class="p-body"><ul id="pack-list" class="pack-list"></ul><p id="pack-empty" class="muted">Empty. Open a file and press Pick it up.</p>
+    <div id="pack-kit-wrap" hidden><div class="sec-k">Kit</div><ul id="pack-kit" class="done-list cards"></ul></div>
+  </div>
+</section>
+
+<section id="quests" hidden aria-label="Errand log">
+  <div class="p-head">
+    <div id="q-kicker">Errand log</div>
+    <div id="q-title">What people have asked you for</div>
+    <button id="q-close" aria-label="Close">×</button>
+  </div>
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-tab="errands">Errands</button>
+    <button class="tab" data-tab="people">Phonebook</button>
+    <button class="tab" data-tab="ach">Achievements</button>
+  </div>
+  <div class="p-body">
+    <div data-pane="errands">
+      <p id="q-empty" class="muted">No errands yet. Residents stand in squares and corridors — talk to anyone with a <b>!</b> over their head.</p>
+      <div id="q-list"></div>
+      <div id="q-done-wrap" hidden>
+        <div class="sec-k">Delivered</div>
+        <ul id="q-done" class="done-list"></ul>
+      </div>
+    </div>
+    <div data-pane="people" hidden>
+      <p id="people-empty" class="muted">You haven't spoken to anyone yet. Names appear over the heads of people you've met.</p>
+      <ul id="people-list" class="people-list"></ul>
+    </div>
+    <div data-pane="ach" hidden>
+      <div class="sec-k">Achievements · <span id="q-ach-count">0/0</span></div>
+      <ul id="q-ach" class="ach-list"></ul>
+      <div id="q-cards-wrap" hidden>
+        <div class="sec-k">Kit</div>
+        <ul id="q-cards" class="done-list cards"></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="title">
+  <div class="title-card">
+    <div class="logo">Dir<span>haven</span></div>
+    <div class="tag">Every folder is a place. Every file is something you can pick up.</div>
+    <p class="lede">Big folders grow into regions and towns, small ones into buildings and rooms. A word dictionary decides what each district looks like; a sentiment lexicon decides whether the sun is out. Nothing is read until you walk there.</p>
+    <div class="actions">
+      <button class="btn primary" id="btn-server" hidden><span><b>Explore <span id="btn-server-name"></span></b><small>Served by your local Dirhaven server, with real permissions</small></span><span class="arrow">→</span></button>
+      <button class="btn primary" id="btn-demo"><span><b>Explore the sample home folder</b><small>A made-up home directory, about 500 files</small></span><span class="arrow">→</span></button>
+      <button class="btn" id="btn-open"><span><b>Open a folder on this device…</b><small>Read-only, stays in your browser</small></span><span class="arrow">→</span></button>
+    </div>
+    <input type="file" id="dir-input" webkitdirectory directory multiple hidden>
+    <div class="legend">
+      <div>Roads lead to other towns and regions</div>
+      <div>Districts are clusters of buildings; rooms are subfolders</div>
+      <div>Objects are files: inspect, play or carry them</div>
+      <div>Guarded vaults are files you can't read</div>
+    </div>
+    <p class="fine">For real permission checks, run <code>node dirhaven-server.mjs ~/some/folder</code> and open the address it prints. Deterministic: the same folder always builds the same town.</p>
+  </div>
+</div>
+
+<section id="atlas" hidden aria-label="Atlas">
+  <div class="atlas-box">
+    <div class="p-head">
+      <div id="q-kicker">Atlas</div>
+      <div id="q-title">Everywhere you know about</div>
+      <button id="atlas-close" aria-label="Close">×</button>
+    </div>
+    <div class="atlas-body">
+      <div id="atlas-tree" aria-label="Known places"></div>
+      <div id="atlas-view">
+        <canvas id="atlas-canvas"></canvas>
+        <div class="atlas-foot">
+          <div><div id="atlas-name"></div><div id="atlas-sub"></div></div>
+          <button id="atlas-travel" class="btn-take primary">Travel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="loading" hidden><div class="k dots">Surveying</div><div id="loading-msg"></div></div>
+<div id="toast" hidden></div>
+
+<div id="help" hidden>
+  <div class="help-card" role="dialog" aria-label="Controls and legend">
+    <button class="iconbtn" id="help-close" aria-label="Close help">×</button>
+    <h2>Field guide</h2>
+    <h3>Controls</h3>
+    <dl>
+      <dt>Arrows / WASD</dt><dd>Walk (hold Shift to run)</dd>
+      <dt>Tap or click</dt><dd>Walk there; tap an object or door to use it</dd>
+      <dt>E · Space · A</dt><dd>Inspect, talk, enter</dd>
+      <dt>Q · Backspace · B</dt><dd>Leave to the parent folder</dd>
+      <dt>M · J · N</dt><dd>Atlas of everywhere you know · errand log · minimap</dd>
+      <dt>B · P</dt><dd>Backpack · phonebook of people you've met</dd>
+      <dt>E (in a file panel)</dt><dd>Pick it up or put it back</dd>
+      <dt>← → (reading)</dt><dd>Turn the page</dd>
+    </dl>
+    <h3>Getting around</h3>
+    <p>Press <b>M</b> for the atlas: every place you've discovered, as a tree on the left and a map on the right. Click a building or quarter on the map to look inside it, and <b>Travel</b> to walk there directly. Locked places say which pass they want.</p>
+    <h3>Trees and the axe</h3>
+    <p>Flowers, weeds and mushrooms are ground cover — walk straight over them. Trees, bushes and rocks are not. Deliver your first errand and an axe shows up as a reward; after that, face any tree and swing to clear it (and leave a stump behind). Ten trees later the jackhammer arrives, which breaks rocks into rubble you can walk over.</p>
+    <h3>Sound</h3>
+    <p>Every place has its own score, written on the spot from its tags and tone: the scale turns minor where a folder reads grimly, the timbre follows the top tag, the chords come from the folder's own path. Jukeboxes, records and speakers are audio files — open one and press <b>Play it in this building</b> to hear the real file (in the sample world there's nothing to decode, so it improvises on the name instead). It fades as you walk away and stops when you leave the building. The <b>♪</b> button mutes everything.</p>
+    <h3>Locked quarters</h3>
+    <p>Some districts are walled and some doors have a keycard reader and a guard. Each map has one pass; run an errand for anyone living on that map and they'll hand it over. Walk up to the reader holding the right card and the guard steps aside for good.</p>
+    <h3>Opening things</h3>
+    <p>A file's card leads with a plain description written from its type, its tags and its tone — no analysis on show unless you want it, which is what <b>How the town read it</b> folds away. Contents stay shut until you ask: <b>Read it</b> opens a book you turn page by page (real PDF pages included), <b>Play it here</b> puts audio on in the building, <b>Look at it</b> frames a picture, <b>Watch it</b> plays video. Rooms with a lot of paperwork keep it in bookcases instead of desks — open one and you get the shelf itself, one spine per file, click a spine to read it.</p>
+    <h3>Backpack and kit</h3>
+    <p><b>Pick it up</b> (or <b>E</b> with the card open) drops a file into your backpack, which holds eight. <b>B</b> opens it to look things over, deliver them or drop them. Tools live in there too: deliver your first errand and an axe turns up for trees; fell ten trees and a jackhammer arrives for rocks. Both are achievement rewards, not purchases.</p>
+    <h3>People</h3>
+    <p>Everyone you've spoken to goes in the phonebook (<b>P</b>) with where they live and what stands between you, and from then on their name floats over their head in the world.</p>
+    <h3>Errands</h3>
+    <p>Residents with a <b>!</b> over their head will ask you to fetch something they've misplaced: a named file, any object of one kind, or something that reads cheerfully or grimly. They send you to parts of the tree you haven't walked yet. Open a file and press <b>Pick it up</b> to carry it, then take it back to whoever asked — they're marked <b>?</b> while they wait, <b>✓</b> once you're carrying the right thing. The log (J) holds your errands. For more hints, ask people standing near where the thing is — locals know their own streets, and the closer they live to it the more precisely they'll tell you. Delivering earns you a true fact about that folder — its oldest file, its heaviest one, the sunniest thing in it.</p>
+    <h3>Names</h3>
+    <p>Folder names get tidied for the signboards — separators become spaces, camelCase splits, common short forms expand (<code>src</code> → Source, <code>ml</code> → ML) — and each place gets a word for what it is: quarters, and buildings named for what's inside them (Gallery, Works, Bank, Library, Depot). The survey card in the corner always shows the real folder name underneath, and file names are never altered.</p>
+    <h3>How folders become places</h3>
+    <p>Subfolders make a place big. Twelve or more and it's a region; six or more, a town. Both are maps you walk around, reached by a road gate. A folder with three to five subfolders is a district: a cluster of buildings around a plaza inside its parent's map. Anything smaller is a building. Inside, each subfolder is a room off the corridor; big buildings stack their rooms over several floors joined by stairs at the ends of the corridor, and a large pile of loose files is sorted into rooms by what the files are for — pictures and showpieces get long hallways rather than square rooms. Folders with nothing in them get no building at all. A town's loose files live in its hall. Hidden files and dotfiles are left out.</p>
+    <h3>Theme and tone</h3>
+    <p>Words in folder names, file names and sampled file contents are looked up in a fixed dictionary of 17 tags (technology, finance, nature…). The top tag picks the ground, buildings, props and floors. A sentiment lexicon with negation handling scores the text; gloomy places get rain and dead trees, cheerful ones get flowers and warm light.</p>
+    <h3>Objects</h3>
+    <dl>
+      <dt>Pictures on the wall</dt><dd>Images, with real thumbnails; extra ones hang on gallery partitions</dd>
+      <dt>Racks along a wall</dt><dd>Binaries and databases (servers), configs (control panels), audio, video, games</dd>
+      <dt>Desk clusters · bookcases</dt><dd>Code and spreadsheets on desks; six or more documents go on shelves you can browse</dd>
+      <dt>Chests · safes</dt><dd>Archives · keys and certificates, stacked by the walls</dd>
+      <dt>Showpieces</dt><dd>3D models, fonts, design files, anything else, on display mid-room</dd>
+      <dt>Vault + guard</dt><dd>Anything you don't have permission to read</dd>
+      <dt>A gold arrow</dt><dd>Marks what you can use right now; sparkles mark files you haven't opened</dd>
+    </dl>
+  </div>
+</div>
+
+<script>
+/*__SCRIPTS__*/
+</script>
